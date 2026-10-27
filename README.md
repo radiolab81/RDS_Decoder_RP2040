@@ -24,9 +24,7 @@ Text    : "Music That Makes You Feel Good! / Long Island's K-98.3"
 5. [Bedienung und Ausgabe](#bedienung-und-ausgabe)
 6. [Testen am PC ohne Hardware](#testen-am-pc-ohne-hardware)
 7. [Projektstruktur](#projektstruktur)
-8. [Wie dieses Projekt mit KI entstanden ist](#wie-dieses-projekt-mit-ki-entstanden-ist)
-9. [Grenzen und mögliche Erweiterungen](#grenzen-und-mögliche-erweiterungen)
-10. [Lizenz](#lizenz)
+8. [Grenzen und mögliche Erweiterungen](#grenzen-und-mögliche-erweiterungen)
 
 ---
 
