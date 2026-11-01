@@ -176,16 +176,6 @@ test/host_test test/mpx228k.u16 -v
 
 Options of the generator `make_testsignal.py`: `--amp` (RDS amplitude in counts), `--noise`, `--dc`, `--pilot` (19 kHz residual), `--foff` (carrier offset in Hz), `--ppm` (clock error), `--fc` (carrier frequency in the MP3).
 
-**Results with the supplied test signal** (30 s, US station "K-98.3", PI 7012):
-
-| Scenario | Good blocks |
-|---|---|
-| Ideal (amplitude 150, noise 6 counts) | 100 % |
-| Carrier +25 Hz, +150 ppm, pilot residual 80 counts, noise 20 counts | 99 % |
-| Carrier −30 Hz, −200 ppm, noise 40 counts at amplitude 80 | 99 % |
-| Noise 80 counts at amplitude 100 (SNR < 0 dB in the ADC band) | 99 % |
-
-
 ---
 
 ## Project structure
