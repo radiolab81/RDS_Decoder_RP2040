@@ -212,7 +212,7 @@ test/
 ## Limitations and possible extensions
 
 * **Not evaluated:** AF lists (alternative frequencies), TMC/traffic information, EON, RDS2. The raw groups (`v`) provide the data for these.
-* **RT+, CT:** implemented and checked against the specification, but not validated with real broadcasts due to a lack of suitable test data – please test with your own reception data.
+* **RT+ ** implemented and checked against the specification, but not validated with real broadcasts due to a lack of suitable test data – please test with your own reception data.
 * **Sync after bit slip:** If the clock slips back by one bit, sync is discarded after 10 erroneous blocks (≈ 0.2 s) and searched anew.
 * **Scrolling PS:** Some stations (e.g. the test signal) send the station name as a scrolling text; the PS field then shows changing fragments, and the RadioText is usually more informative.
 * **Country code:** Only DE/AT/CH are displayed as abbreviations, derived from ECC + the PI country nibble.
