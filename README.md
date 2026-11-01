@@ -2,7 +2,7 @@
 
 Ein vollständiger Software-RDS-Decoder: Er nimmt das **MPX-Signal eines UKW-Tuners** an einem ADC-Pin entgegen, demoduliert den 57-kHz-RDS-Träger komplett in Software (Costas-Schleife, Symbol-Takt-Rückgewinnung, Block-Synchronisation) und gibt über die serielle USB-Konsole sowohl die rohen RDS-Blöcke als auch alle paar Sekunden eine lesbare Zusammenfassung aus: **Sendername, Stationskennung, Programmtyp, Uhrzeit, RadioText sowie Titel und Interpret** (sofern der Sender RadioText Plus sendet).
 
-Es wird keine zusätzliche RDS-Hardware (z. B. SAA6588, Si4703) benötigt – nur der Pico, ein Bandpass um 57 kHz und zwei Widerstände.
+Es wird keine zusätzliche RDS-Hardware (z. B. klassischer SAA6588 oder vergleichbar) benötigt – nur der Pico, ein Bandpass um 57 kHz und zwei Widerstände.
 
 ```
 === RDS-Status  t=25s ==============================
