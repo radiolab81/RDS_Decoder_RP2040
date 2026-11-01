@@ -1,8 +1,8 @@
-# RDS-Decoder für den RP2040 (Raspberry Pi Pico)
+# RDS Decoder for the RP2040 (Raspberry Pi Pico)
 
-Ein vollständiger Software-RDS-Decoder: Er nimmt das **MPX-Signal eines UKW-Tuners** an einem ADC-Pin entgegen, demoduliert den 57-kHz-RDS-Träger komplett in Software (Costas-Schleife, Symbol-Takt-Rückgewinnung, Block-Synchronisation) und gibt über die serielle USB-Konsole sowohl die rohen RDS-Blöcke als auch alle paar Sekunden eine lesbare Zusammenfassung aus: **Sendername, Stationskennung, Programmtyp, Uhrzeit, RadioText sowie Titel und Interpret** (sofern der Sender RadioText Plus sendet).
+A complete software RDS decoder: it takes the **MPX signal of an FM tuner** on an ADC pin, demodulates the 57 kHz RDS subcarrier entirely in software (Costas loop, symbol clock recovery, block synchronization), and outputs both the raw RDS blocks and, every few seconds, a human-readable summary over the USB serial console: **station name, station identification, programme type, time of day, RadioText, and title and artist** (if the station transmits RadioText Plus).
 
-Es wird keine zusätzliche RDS-Hardware (z. B. klassischer SAA6588 oder vergleichbar) benötigt – nur der Pico, ein Bandpass um 57 kHz und zwei Widerstände.
+No additional RDS hardware (e.g. the classic SAA6588 or similar) is needed – only the Pico, a bandpass filter around 57 kHz, and two resistors.
 
 ```
 === RDS-Status  t=25s ==============================
@@ -13,208 +13,207 @@ Uhrzeit : 2026-10-19 17:02 lokal (UTC+02:00, CT-Gruppe vor 12s)
 Text    : "Music That Makes You Feel Good! / Long Island's K-98.3"
 ```
 
+*(The firmware's console output is in German, as shown above. The labels are explained in [Operation and output](#operation-and-output).)*
+
 ---
 
-## Inhalt
+## Contents
 
-1. [Was ist RDS?](#was-ist-rds)
-2. [Signalkette dieses Decoders](#signalkette-dieses-decoders)
+1. [What is RDS?](#what-is-rds)
+2. [Signal chain of this decoder](#signal-chain-of-this-decoder)
 3. [Hardware](#hardware)
-4. [Bauen und Flashen](#bauen-und-flashen)
-5. [Bedienung und Ausgabe](#bedienung-und-ausgabe)
-6. [Testen am PC ohne Hardware](#testen-am-pc-ohne-hardware)
-7. [Projektstruktur](#projektstruktur)
-8. [Grenzen und mögliche Erweiterungen](#grenzen-und-mögliche-erweiterungen)
+4. [Building and flashing](#building-and-flashing)
+5. [Operation and output](#operation-and-output)
+6. [Testing on a PC without hardware](#testing-on-a-pc-without-hardware)
+7. [Project structure](#project-structure)
+8. [Limitations and possible extensions](#limitations-and-possible-extensions)
 
 ---
 
-## Was ist RDS?
+## What is RDS?
 
-Das **Radio Data System** (RDS, in den USA als RBDS bekannt; Norm IEC 62106 / EN 50067) überträgt zusätzlich zum Audio kleine Datenmengen im UKW-Rundfunk. Praktisch jedes Autoradio nutzt es für den Sendernamen, Verkehrsmeldungen oder die automatische Sendersuche.
+The **Radio Data System** (RDS, known as RBDS in the USA; standard IEC 62106 / EN 50067) transmits small amounts of data in FM broadcasting in addition to the audio. Practically every car radio uses it for the station name, traffic announcements, or automatic station search.
 
-### Wo steckt RDS im UKW-Signal?
+### Where is RDS located in the FM signal?
 
-Das demodulierte UKW-Signal (das *MPX-Signal*, „Multiplex") enthält mehrere Anteile übereinander:
+The demodulated FM signal (the *MPX signal*, "multiplex") contains several components stacked on top of each other:
 
-| Frequenzbereich | Inhalt |
+| Frequency range | Content |
 |---|---|
-| 0 – 15 kHz | Mono-Summensignal (L+R) |
-| 19 kHz | Stereo-Pilotton |
-| 23 – 53 kHz | Stereo-Differenzsignal (L−R), um 38 kHz |
-| **57 kHz ± 2,4 kHz** | **RDS** (3. Harmonische des Pilottons) |
+| 0 – 15 kHz | Mono sum signal (L+R) |
+| 19 kHz | Stereo pilot tone |
+| 23 – 53 kHz | Stereo difference signal (L−R), around 38 kHz |
+| **57 kHz ± 2.4 kHz** | **RDS** (3rd harmonic of the pilot tone) |
 
-Der RDS-Träger liegt bei exakt 57 kHz und ist mit dem Pilotton phasenstarr verkoppelt. Er trägt ein **BPSK-Signal** (Phasenumtastung) mit nur ca. 2–10 % des Gesamthubs – also ein sehr schwaches, schmalbandiges Signal neben starkem Audio.
+The RDS subcarrier is at exactly 57 kHz and is phase-locked to the pilot tone. It carries a **BPSK signal** (phase-shift keying) with only about 2–10 % of the total deviation – a very weak, narrowband signal next to strong audio.
 
-### Wie sind die Daten codiert?
+### How is the data encoded?
 
-* **Datenrate:** 1187,5 Bit/s (= 57 kHz / 48).
-* **Differenzielle Codierung:** Ein Bit entspricht einem *Wechsel* bzw. *Nicht-Wechsel* des Vorzeichens – dadurch ist die absolute Polarität der Trägerphase egal (wichtig für die Costas-Schleife, die einen 180°-Zweifel hat).
-* **Biphase (Manchester)-Symbole:** Jedes Bit besteht aus einer positiven und einer negativen Halbwelle. Das Spektrum hat dadurch *keine* Energie direkt auf dem Träger (kein Trägerrest), die Hauptkeule liegt bei ±1,2 kHz um 57 kHz.
-* **Blöcke und Gruppen:** Je 16 Datenbits + 10 Prüfbits = **Block** (26 Bit). Vier Blöcke (A, B, C bzw. C', D) bilden eine **Gruppe** (104 Bit, ca. 11,4 Gruppen/s).
-* **Prüfsumme (CRC):** Die 10 Prüfbits werden mit einem **Offset-Wort** (A, B, C, C', D) verknüpft. Dadurch erkennt der Empfänger *ohne* zusätzliche Synchronisationsbits, an welcher Stelle im Bitstrom er sich befindet – und kann sogar kurze Fehlerbündel (Bursts) korrigieren.
+* **Data rate:** 1187.5 bit/s (= 57 kHz / 48).
+* **Differential encoding:** A bit corresponds to a *change* or *no change* of the sign – so the absolute polarity of the carrier phase does not matter (important for the Costas loop, which has a 180° ambiguity).
+* **Biphase (Manchester) symbols:** Each bit consists of a positive and a negative half-wave. As a result, the spectrum has *no* energy directly at the carrier (no residual carrier); the main lobe lies at ±1.2 kHz around 57 kHz.
+* **Blocks and groups:** 16 data bits + 10 check bits = one **block** (26 bits). Four blocks (A, B, C or C', D) form a **group** (104 bits, about 11.4 groups/s).
+* **Checksum (CRC):** The 10 check bits are combined with an **offset word** (A, B, C, C', D). This lets the receiver determine its position in the bit stream *without* any additional synchronization bits – and even correct short error bursts.
 
-### Was steht in den Gruppen?
+### What is in the groups?
 
-| Block | Inhalt |
+| Block | Content |
 |---|---|
-| A | **PI** (Programme Identification, 16 Bit) – eindeutige Senderkennung, enthält u. a. das Land |
-| B | Gruppentyp (4 Bit), Version A/B, TP-Flag, **PTY** (Programmtyp, 5 Bit), gruppenspezifische Bits |
-| C, D | Nutzdaten je nach Gruppentyp |
+| A | **PI** (Programme Identification, 16 bits) – unique station identifier, containing the country among other things |
+| B | Group type (4 bits), version A/B, TP flag, **PTY** (programme type, 5 bits), group-specific bits |
+| C, D | Payload depending on group type |
 
-Die wichtigsten Gruppentypen (von diesem Decoder ausgewertet):
+The most important group types (evaluated by this decoder):
 
-| Gruppe | Inhalt |
+| Group | Content |
 |---|---|
-| **0A/0B** | **PS** – Programme Service Name (8 Zeichen, in 4 Segmenten à 2 Zeichen), TA/TP, Musik/Sprache |
-| **1A** | Slow Labelling, u. a. **ECC** (Extended Country Code) |
-| **2A/2B** | **RadioText** (bis 64 Zeichen, in Segmenten à 4 bzw. 2 Zeichen; A/B-Flag signalisiert neuen Text) |
-| **3A** | ODA-Ankündigung („Open Data Application") – hier **RadioText Plus (RT+)**, AID `4BD7` |
-| **4A** | **CT** – Clock Time: Datum (Modified Julian Date), UTC-Uhrzeit, lokaler Offset; einmal pro Minute |
-| *RT+-Gruppe* | Markierungen („Tags") in den RadioText: welche Zeichen sind **Titel**, **Interpret**, Album usw. |
+| **0A/0B** | **PS** – Programme Service name (8 characters, in 4 segments of 2 characters), TA/TP, music/speech |
+| **1A** | Slow labelling, including the **ECC** (Extended Country Code) |
+| **2A/2B** | **RadioText** (up to 64 characters, in segments of 4 or 2 characters; the A/B flag signals new text) |
+| **3A** | ODA announcement ("Open Data Application") – here **RadioText Plus (RT+)**, AID `4BD7` |
+| **4A** | **CT** – Clock Time: date (Modified Julian Date), UTC time, local offset; once per minute |
+| *RT+ group* | Markers ("tags") in the RadioText: which characters are **title**, **artist**, album, etc. |
 
 ---
 
-## Signalkette dieses Decoders
+## Signal chain of this decoder
 
-Die Abtastrate ist bewusst **das Vierfache des RDS-Trägers (228 kS/s)**. Dadurch ist der Mischer auf 57 kHz mathematisch trivial: Der Träger ist nur die Folge `1, 0, −1, 0` (Kosinus) bzw. `0, −1, 0, 1` (Sinus) – es sind keine Multiplikationen und keine Tabellen nötig.
+The sampling rate is deliberately **four times the RDS subcarrier (228 kS/s)**. This makes the mixer at 57 kHz mathematically trivial: the carrier is just the sequence `1, 0, −1, 0` (cosine) or `0, −1, 0, 1` (sine) – no multiplications and no lookup tables are needed.
 
 ```
-ADC0 (GPIO26) ──DMA──► [DC-Tracking] ─► [Mischer 57 kHz, ÷4] ─► [FIR-Tiefpass, ÷6]
-   228 kS/s                228 k              57 k                    9,5 kHz
+ADC0 (GPIO26) ──DMA──► [DC tracking] ─► [Mixer 57 kHz, ÷4] ─► [FIR low-pass, ÷6]
+   228 kS/s                228 k              57 k                    9.5 kHz
                                                                          │
- Bits ◄─ [Diff.-Dekoder] ◄─ [Takt-Regelung + Manchester-Korrelator] ◄─ [Costas-Schleife]
-   │            1187,5 Bit/s            8 Samples pro Symbol               (BPSK, PI-Regler)
+ Bits ◄─ [Diff. decoder] ◄─ [Clock control + Manchester correlator] ◄─ [Costas loop]
+   │            1187.5 bit/s            8 samples per symbol               (BPSK, PI controller)
    ▼
-[Block-Sync / CRC / Burstkorrektur] ─► Gruppen ─► [Parser] ─► serielle Ausgabe
+[Block sync / CRC / burst correction] ─► Groups ─► [Parser] ─► serial output
 ```
 
-| Stufe | Datei | Beschreibung |
+| Stage | File | Description |
 |---|---|---|
-| **ADC + DMA** | `main.c` | ADC-Freilauf mit 48 MHz/210,5 ≈ 228 kS/s, zwei DMA-Kanäle im Ping-Pong (je 1536 Samples = 6,7 ms), Interrupt pro Block |
-| **DC-Tracking** | `rds_dsp.c` | Einpol-Tiefpass schätzt den DC-Anteil (Bauteiltoleranzen des Spannungsteilers) und zieht ihn **pro Sample mitlaufend** ab. Zeitkonstante anfangs kurz (schnelles Einschwingen), dann ca. 18 ms |
-| **Mischer + ÷4** | `rds_dsp.c` | Mit der Folge `1,0,−1,0` entsteht aus je vier Samples ein komplexer Wert: `I = x0 − x2`, `Q = x3 − x1` (Basisbandrate 57 kHz). Die Differenzbildung unterdrückt exakt DC und 114 kHz, **Audio unter ca. 4 kHz klappt aber nur mit −23 … −37 dB in das RDS-Band zurück** – ein guter analoger Bandpass ist daher Pflicht |
-| **FIR-Tiefpass ÷6** | `rds_dsp.c`, `rds_fir.h` | 48 Taps (Q15, mit `tools/gen_fir.py` erzeugt), Durchlass bis 2,2 kHz, Sperrbereich ab 5,6 kHz (≥ 44 dB). Ergebnis: 9,5 kHz = **8 Samples pro Symbol**. Pilot (19 kHz) und Stereo-Reste ab ca. 8 kHz Abstand werden ≥ 60 dB unterdrückt; direkt am Träger ist die Flanke flach (52/62 kHz: −23 dB, 53 kHz: −7 dB) |
-| **Costas-Schleife** | `rds_dsp.c` | Echte BPSK-Costas-Schleife mit NCO (1024er Sinustabelle). Phasenfehler `I·Q / Leistung` (dadurch pegelunabhängig, kein separates AGC nötig), PI-Regler 2. Ordnung. Rauschbandbreite 35 Hz beim Einfangen, automatisch 8 Hz bei Lock (Lock-Detektor). Die Schleife gleicht Quarzabweichungen und die Differenz zum Sender-Träger aus |
-| **Symboltakt** | `rds_dsp.c` | Gleitender Manchester-Korrelator (Halbsinus-Gewichte über 1 Symbol); Early/Late-Detektor mit linearer Interpolation und PI-Schleife (Taktabweichung bis ca. ±500 ppm gut, bei ±2000 ppm bricht der Empfang ein). **Grobsuche** über ein Energieprofil, weil der Korrelator ein Nebenmaximum eine halbe Symbolperiode neben dem Hauptmaximum hat, auf dem die Feinschleife sonst stabil falsch rasten kann |
-| **Diff.-Dekoder** | `rds_dsp.c` | Bit = Vorzeichenwechsel zum vorigen Symbol |
-| **Block-Sync** | `rds_sync.c` | 26-Bit-Schieberegister, CRC-Syndrom gegen alle Offsets; Sync nach zwei gültigen Blöcken im richtigen Abstand/Reihenfolge; danach blockweise Prüfung. **Burstkorrektur** bis 2 Bit (einstellbar `RDS_FEC_MAX_BURST`); Sync-Verlust bei 10 fehlerhaften Blöcken in Folge oder > 35 von 50 |
-| **Parser** | `rds_parser.c` | PS, PTY, TP/TA, ECC, RadioText (A/B-Flag, Terminator `0x0D`, Vollständigkeitsprüfung), RT+-Tags, CT inkl. Datumsberechnung, **RDS-Zeichensatz → UTF-8** (Umlaute, ß …). PI-Wechsel wird erst nach 3 Bestätigungen übernommen |
+| **ADC + DMA** | `main.c` | Free-running ADC at 48 MHz/210.5 ≈ 228 kS/s, two DMA channels in ping-pong mode (1536 samples each = 6.7 ms), one interrupt per block |
+| **DC tracking** | `rds_dsp.c` | A single-pole low-pass estimates the DC component (component tolerances of the voltage divider) and subtracts it **continuously, sample by sample**. The time constant is short at first (fast settling), then about 18 ms |
+| **Mixer + ÷4** | `rds_dsp.c` | With the sequence `1,0,−1,0`, each four samples yield one complex value: `I = x0 − x2`, `Q = x3 − x1` (baseband rate 57 kHz). The differencing suppresses DC and 114 kHz exactly, **but audio below about 4 kHz aliases back into the RDS band with only −23 … −37 dB** – a good analog bandpass is therefore mandatory |
+| **FIR low-pass ÷6** | `rds_dsp.c`, `rds_fir.h` | 48 taps (Q15, generated with `tools/gen_fir.py`), passband up to 2.2 kHz, stopband from 5.6 kHz (≥ 44 dB). Result: 9.5 kHz = **8 samples per symbol**. Pilot (19 kHz) and stereo residuals at about 8 kHz offset and beyond are suppressed by ≥ 60 dB; directly at the carrier the slope is flat (52/62 kHz: −23 dB, 53 kHz: −7 dB) |
+| **Costas loop** | `rds_dsp.c` | A true BPSK Costas loop with NCO (1024-entry sine table). Phase error `I·Q / power` (hence level-independent, no separate AGC needed), 2nd-order PI controller. Noise bandwidth 35 Hz during acquisition, automatically 8 Hz at lock (lock detector). The loop compensates crystal deviations and the difference to the transmitter's carrier |
+| **Symbol clock** | `rds_dsp.c` | Sliding Manchester correlator (half-sine weights over one symbol); early/late detector with linear interpolation and PI loop (clock deviation up to about ±500 ppm is fine; at ±2000 ppm reception breaks down). **Coarse search** via an energy profile, because the correlator has a side maximum half a symbol period away from the main maximum, on which the fine loop could otherwise lock stably in the wrong place |
+| **Diff. decoder** | `rds_dsp.c` | Bit = sign change relative to the previous symbol |
+| **Block sync** | `rds_sync.c` | 26-bit shift register, CRC syndrome against all offsets; sync after two valid blocks at the correct spacing/order; block-by-block checking thereafter. **Burst correction** of up to 2 bits (configurable via `RDS_FEC_MAX_BURST`); sync loss after 10 consecutive erroneous blocks or > 35 out of 50 |
+| **Parser** | `rds_parser.c` | PS, PTY, TP/TA, ECC, RadioText (A/B flag, terminator `0x0D`, completeness check), RT+ tags, CT including date calculation, **RDS character set → UTF-8** (umlauts, ß, …). A PI change is accepted only after 3 confirmations |
 
-**Zwei Kerne:** Core 1 führt ADC-Verarbeitung, DSP und Block-Sync aus (zeitkritisch). Core 0 wertet die fertigen Gruppen (über eine Queue) aus und kümmert sich um USB-Ausgabe und Tastaturkommandos. So kann eine langsame USB-Ausgabe die Demodulation nie blockieren.
+**Two cores:** Core 1 runs the ADC processing, DSP, and block sync (time-critical). Core 0 evaluates the completed groups (via a queue) and handles USB output and keyboard commands. This way, slow USB output can never block the demodulation.
 
 ---
 
 ## Hardware
 
 ```
-MPX vom Tuner ─► Bandpass 57 kHz ─► C (Koppelkondensator) ─┬─► ADC0 (GPIO26)
-                                                           │
-                                          3V3 ──[R]──┬─────┘
-                                                     └──[R]── GND      (R = 2 × gleicher Wert, z. B. 4,7 k … 10 k)
+MPX from tuner ─► Bandpass 57 kHz ─► C (coupling capacitor) ─┬─► ADC0 (GPIO26)
+                                                             │
+                                            3V3 ──[R]──┬─────┘
+                                                       └──[R]── GND      (R = 2 × same value, e.g. 4.7 k … 10 k)
 ```
 
-* **Gleichspannungsarbeitspunkt:** Zwei gleiche Widerstände legen den ADC-Eingang auf Bereichsmitte (≈ 2048). Bauteiltoleranzen sind unkritisch – die Firmware rechnet den DC-Rest mitlaufend heraus.
-* **Pegel:** Das RDS-Signal sollte nach dem Bandpass mindestens einige zehn ADC-Counts Amplitude haben (Status-Zeile „Pegel min..max" prüfen), ggf. vor dem ADC verstärken. Nicht übersteuern (0 bzw. 4095).
-* **Bandpass:** Ein Bandpass um 57 kHz (ca. ±3 kHz) ist wichtig: Er muss Mono-Audio (< 15 kHz), Pilotton (19 kHz) und das Stereo-Differenzsignal (bis 53 kHz) deutlich abschwächen, denn die digitale Eingangsstufe dieses Decoders sperrt Audio unter 4 kHz nur schwach.
-* **Rauschen:** Auf dem Pico wird GPIO23 (SMPS-PS) auf HIGH gesetzt (PWM-Modus des Schaltreglers → sauberere ADC-Versorgung). Zusätzlich helfen kurze Leitungen und ein gut entkoppeltes 3V3.
-* **Abtastrate:** 48 MHz / 210,527 = 227,999 kS/s (−6 ppm, ≈ 0,3 Hz Ablage bei 57 kHz; wird von der Costas-Schleife ausgeglichen). Die Schleife fängt Trägerablagen bis ±20 Hz in < 0,3 s, ±50 Hz in ca. 1,5 s und ±100 Hz erst nach ca. 6 s ein.
-
+* **DC operating point:** Two equal resistors set the ADC input to mid-range (≈ 2048). Component tolerances are not critical – the firmware continuously removes the residual DC.
+* **Level:** After the bandpass, the RDS signal should have at least a few tens of ADC counts of amplitude (check "Pegel min..max" in the status line); amplify before the ADC if necessary. Do not overdrive (0 or 4095).
+* **Bandpass:** A bandpass around 57 kHz (about ±3 kHz) is important: it must clearly attenuate mono audio (< 15 kHz), pilot tone (19 kHz), and the stereo difference signal (up to 53 kHz), because the digital input stage of this decoder attenuates audio below 4 kHz only weakly.
+* **Noise:** On the Pico, GPIO23 (SMPS power save) is set HIGH (PWM mode of the switching regulator → cleaner ADC supply). Short wiring and a well-decoupled 3V3 rail also help.
+* **Sampling rate:** 48 MHz / 210.527 = 227.999 kS/s (−6 ppm, ≈ 0.3 Hz offset at 57 kHz; compensated by the Costas loop). The loop acquires carrier offsets up to ±20 Hz in < 0.3 s, ±50 Hz in about 1.5 s, and ±100 Hz only after about 6 s.
 
 ---
 
-## Bauen und Flashen
+## Building and flashing
 
-Voraussetzungen: [Pico SDK](https://github.com/raspberrypi/pico-sdk) (inkl. Submodule `tinyusb`), CMake, `arm-none-eabi-gcc`.
+Requirements: [Pico SDK](https://github.com/raspberrypi/pico-sdk) (including the `tinyusb` submodule), CMake, `arm-none-eabi-gcc`.
 
 ```bash
-export PICO_SDK_PATH=/pfad/zum/pico-sdk
+export PICO_SDK_PATH=/path/to/pico-sdk
 cmake -S . -B build -DPICO_BOARD=pico
 make -C build
 ```
 
-`build/rds_decoder.uf2` bei gedrückter BOOTSEL-Taste auf das USB-Laufwerk des Pico kopieren. Danach erscheint ein serieller USB-Port (CDC, die Baudrate ist egal) – mit einem beliebigen Terminalprogramm öffnen (UTF-8!).
+Copy `build/rds_decoder.uf2` to the Pico's USB drive while holding the BOOTSEL button. Afterwards a USB serial port (CDC; the baud rate does not matter) appears – open it with any terminal program (UTF-8!).
 
 ---
 
-## Bedienung und Ausgabe
+## Operation and output
 
-Alle 5 Sekunden (`RDS_STATUS_INTERVAL_MS` in `src/rds_config.h`) wird ein Statusblock ausgegeben:
+Every 5 seconds (`RDS_STATUS_INTERVAL_MS` in `src/rds_config.h`) a status block is printed. The firmware prints the line labels in German; their meaning:
 
-| Zeile | Bedeutung |
+| Line (as printed) | Meaning |
 |---|---|
-| **Empfang** | `SYNC`/`suche`, Trägerablage der Costas-Schleife in Hz, Lock-Wert (≈ 1 = gerastet), ADC-Pegel min..max und DC-Wert, Symboltakt-Abweichung |
-| Blöcke | Anzahl guter / reparierter / fehlerhafter Blöcke, Gruppen, Sync-Verluste |
-| **Sender** | PI (hex, ggf. Land), PS (Sendername), PTY, TP/TA, Musik/Sprache |
-| **Uhrzeit** | lokale Zeit aus der CT-Gruppe, zwischen den Minuten-Gruppen mitgezählt |
-| **Text / Titel / Interpret** | RadioText; bei RT+ zusätzlich getrennt Titel, Interpret, Album |
+| **Empfang** (reception) | `SYNC`/`suche` (searching), carrier offset of the Costas loop in Hz, lock value (≈ 1 = locked), ADC level min..max and DC value, symbol clock deviation |
+| Blöcke (blocks) | Number of good / repaired / erroneous blocks, groups, sync losses |
+| **Sender** (station) | PI (hex, with country if known), PS (station name), PTY, TP/TA, music/speech |
+| **Uhrzeit** (time) | Local time from the CT group, counted on between the once-per-minute groups |
+| **Text / Titel / Interpret** (text / title / artist) | RadioText; with RT+, title, artist, and album are additionally shown separately |
 
-Tastaturkommandos im Terminal:
+Keyboard commands in the terminal:
 
-| Taste | Funktion |
+| Key | Function |
 |---|---|
-| `v` | Rohgruppen an/aus (`RDS 7012  00E8  E0CD  596F   0A`; `----` = Block fehlerhaft, `*` = per Burstkorrektur repariert) |
-| `s` | Status sofort ausgeben |
-| `r` | RDS-Daten zurücksetzen (z. B. nach Senderwechsel) |
-| `h` | Hilfe |
+| `v` | Raw groups on/off (`RDS 7012  00E8  E0CD  596F   0A`; `----` = block erroneous, `*` = repaired by burst correction) |
+| `s` | Print status immediately |
+| `r` | Reset RDS data (e.g. after changing station) |
+| `h` | Help |
 
-Die LED des Pico leuchtet, solange der Block-Sync steht.
+The Pico's LED is lit as long as block sync is established.
 
 ---
 
-## Testen am PC ohne Hardware
+## Testing on a PC without hardware
 
-Der gesamte DSP-/Dekoder-Code ist hardwareunabhängig und läuft auch auf dem PC. Als Testsignal dient eine MP3 mit RDS-Basisband (hier ca. 2,2 kHz Träger bei 44,1 kHz); `make_testsignal.py` setzt sie auf 57 kHz / 228 kS/s um und erzeugt ein ADC-ähnliches 12-Bit-Signal mit DC-Offset und Rauschen.
+The entire DSP/decoder code is hardware-independent and also runs on a PC. The test signal is an MP3 containing the RDS baseband (here about 2.2 kHz carrier at 44.1 kHz); `make_testsignal.py` converts it to 57 kHz / 228 kS/s and produces an ADC-like 12-bit signal with DC offset and noise.
 
 ```bash
-python3 tools/make_testsignal.py deine.mp3 test/mpx228k.u16
+python3 tools/make_testsignal.py your.mp3 test/mpx228k.u16
 gcc -O2 -Wall -o test/host_test test/host_test.c src/rds_dsp.c src/rds_sync.c src/rds_parser.c -lm
 test/host_test test/mpx228k.u16 -v
 ```
 
-`tools/make_mpx_test.py` erzeugt zusätzlich ein realistischeres Testsignal mit Audio, Pilot und Stereo-Störern, einem analogen Frontend-Modell (Bandpass 2./4./8. Ordnung oder nur Hochpass) und ADC-Rauschen/-Nichtlinearität (Parameter siehe Kopf der Datei).
+`tools/make_mpx_test.py` additionally generates a more realistic test signal with audio, pilot, and stereo interferers, an analog front-end model (2nd/4th/8th-order bandpass or high-pass only), and ADC noise/nonlinearity (parameters: see the top of the file).
 
-Optionen des Generators `make_testsignal.py`: `--amp` (RDS-Amplitude in Counts), `--noise`, `--dc`, `--pilot` (19-kHz-Rest), `--foff` (Trägerversatz in Hz), `--ppm` (Takt­fehler), `--fc` (Trägerfrequenz in der MP3).
+Options of the generator `make_testsignal.py`: `--amp` (RDS amplitude in counts), `--noise`, `--dc`, `--pilot` (19 kHz residual), `--foff` (carrier offset in Hz), `--ppm` (clock error), `--fc` (carrier frequency in the MP3).
 
-**Ergebnisse mit dem mitgelieferten Testsignal** (30 s, US-Sender „K-98.3", PI 7012):
+**Results with the supplied test signal** (30 s, US station "K-98.3", PI 7012):
 
-| Szenario | Gute Blöcke |
+| Scenario | Good blocks |
 |---|---|
-| Ideal (Amplitude 150, Rauschen 6 Counts) | 100 % |
-| Träger +25 Hz, +150 ppm, Pilotrest 80 Counts, Rauschen 20 Counts | 99 % |
-| Träger −30 Hz, −200 ppm, Rauschen 40 Counts bei Amplitude 80 | 99 % |
-| Rauschen 80 Counts bei Amplitude 100 (SNR < 0 dB im ADC-Band) | 99 % |
+| Ideal (amplitude 150, noise 6 counts) | 100 % |
+| Carrier +25 Hz, +150 ppm, pilot residual 80 counts, noise 20 counts | 99 % |
+| Carrier −30 Hz, −200 ppm, noise 40 counts at amplitude 80 | 99 % |
+| Noise 80 counts at amplitude 100 (SNR < 0 dB in the ADC band) | 99 % |
 
-Zusätzlich läuft der Decoder auf echter Hardware an einem analogen Radio auch bei schwächeren Signalen zuverlässig (Rückmeldung des Entwicklers).
 
 ---
 
-## Projektstruktur
+## Project structure
 
 ```
-CMakeLists.txt            Pico-SDK-Projekt (Code läuft aus dem RAM)
+CMakeLists.txt            Pico SDK project (code runs from RAM)
 pico_sdk_import.cmake
 src/
-  main.c                  ADC + DMA (Ping-Pong), Core-1-Loop, Core-0-Konsole
-  rds_config.h            zentrale Konstanten (Raten, Schleifenbandbreiten, FEC, Status-Intervall)
-  rds_dsp.c/.h            DC-Tracking, Mischer, FIR, Costas, Symboltakt, Diff.-Dekoder
-  rds_fir.h               FIR-Koeffizienten (erzeugt von tools/gen_fir.py)
-  rds_sync.c/.h           Block-Sync, CRC-Syndrome, Burstkorrektur, Gruppenbildung
-  rds_parser.c/.h         Gruppenauswertung, Zeichensatz, Statusausgabe
+  main.c                  ADC + DMA (ping-pong), core 1 loop, core 0 console
+  rds_config.h            central constants (rates, loop bandwidths, FEC, status interval)
+  rds_dsp.c/.h            DC tracking, mixer, FIR, Costas, symbol clock, diff. decoder
+  rds_fir.h               FIR coefficients (generated by tools/gen_fir.py)
+  rds_sync.c/.h           block sync, CRC syndromes, burst correction, group assembly
+  rds_parser.c/.h         group evaluation, character set, status output
 tools/
-  gen_fir.py              FIR-Entwurf (scipy) → rds_fir.h
-  make_testsignal.py      MP3/Basisband → 57-kHz-ADC-Testsignal
+  gen_fir.py              FIR design (scipy) → rds_fir.h
+  make_testsignal.py      MP3/baseband → 57 kHz ADC test signal
 test/
-  host_test.c             Decoder auf dem PC (liest rohe uint16-Samples)
+  host_test.c             decoder on the PC (reads raw uint16 samples)
 ```
 
 ---
 
-## Grenzen und mögliche Erweiterungen
+## Limitations and possible extensions
 
-* **Nicht ausgewertet:** AF-Listen (alternative Frequenzen), TMC/Verkehrsfunk, EON, RDS2. Die Rohgruppen (`v`) liefern die Daten dafür.
-* **RT+, CT:** implementiert und gegen die Spezifikation geprüft, aber mangels passender Testdaten nicht mit realen Sendungen validiert – bitte mit eigenen Empfangsdaten testen.
-* **Sync nach Bitschlupf:** Fällt der Takt um ein Bit zurück, wird der Sync nach 10 fehlerhaften Blöcken (≈ 0,2 s) verworfen und neu gesucht.
-* **Scrollende PS:** Manche Sender (z. B. das Testsignal) schicken den Sendernamen als Laufschrift; das PS-Feld zeigt dann wechselnde Teile, der RadioText ist meist aussagekräftiger.
-* **Länderkennung:** Nur DE/AT/CH werden aus ECC + PI-Land-Nibble als Kürzel angezeigt.
-* **Ideen:** 19-kHz-Pilot als Träger-/Taktreferenz nutzen (bessere Empfindlichkeit), Soft-Decision-Dekodierung, AF/EON-Anzeige, Ausgabe als JSON, Anbindung an ein Display.
-
+* **Not evaluated:** AF lists (alternative frequencies), TMC/traffic information, EON, RDS2. The raw groups (`v`) provide the data for these.
+* **RT+, CT:** implemented and checked against the specification, but not validated with real broadcasts due to a lack of suitable test data – please test with your own reception data.
+* **Sync after bit slip:** If the clock slips back by one bit, sync is discarded after 10 erroneous blocks (≈ 0.2 s) and searched anew.
+* **Scrolling PS:** Some stations (e.g. the test signal) send the station name as a scrolling text; the PS field then shows changing fragments, and the RadioText is usually more informative.
+* **Country code:** Only DE/AT/CH are displayed as abbreviations, derived from ECC + the PI country nibble.
+* **Ideas:** use the 19 kHz pilot as carrier/clock reference (better sensitivity), soft-decision decoding, AF/EON display, JSON output, connection to a display.
